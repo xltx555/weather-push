@@ -7,6 +7,7 @@ import os
 import schedule
 import time
 from email.mime.text import MIMEText
+from datetime import datetime, timedelta
 
 # 强制全局编码 + 环境变量净化
 sys.stdout.reconfigure(encoding='utf-8') if hasattr(sys.stdout, 'reconfigure') else None
@@ -21,12 +22,44 @@ SMTP_USER = str(os.getenv("SMTP_USER", "")).strip()
 SMTP_PWD = str(os.getenv("SMTP_PWD", "")).strip()
 TO_EMAIL_STR = str(os.getenv("TO_EMAIL", "")).strip()
 TO_EMAIL_LIST = [x.strip() for x in TO_EMAIL_STR.split(",") if x.strip()]
+# 新增：GitHub Token（在仓库 Secrets 中添加名为 GITHUB_TOKEN 的密钥）
+GITHUB_TOKEN = str(os.getenv("GITHUB_TOKEN", "")).strip()
 
 # 城市配置（纯英文标点）
 CITIES = {
     "101281901": "Chaozhou",
     "101281601": "Dongguan"
 }
+
+# 新增：获取GitHub Actions剩余额度
+def get_gh_actions_remaining():
+    if not GITHUB_TOKEN:
+        return "GitHub Token not set (add GITHUB_TOKEN in Secrets)"
+    url = "https://api.github.com/users/{user}/settings/billing/actions"
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+    try:
+        # 先获取用户名
+        user_res = requests.get("https://api.github.com/user", headers=headers, timeout=10)
+        user_res.raise_for_status()
+        username = user_res.json()["login"]
+        # 获取Actions账单
+        res = requests.get(url.format(user=username), headers=headers, timeout=10)
+        res.raise_for_status()
+        data = res.json()
+        return f"GitHub Actions: Used {data['total_minutes_used']} min, Remaining {data['total_minutes_remaining']} min, Cycle ends in {data['days_left_in_billing_cycle']} days"
+    except Exception as e:
+        return f"Actions quota fetch failed: {str(e)}"
+
+# 新增：估算天气API剩余调用
+def estimate_weather_api_remaining():
+    total_month_calls = 3 * 30  # 每天3次 × 30天
+    used_calls = len(CITIES) * 3  # 每次运行调用次数：城市数 × 3天预报
+    remaining = max(0, 10000 - used_calls)  # 假设API日限10000，可修改
+    return f"Weather API: Estimated monthly used {total_month_calls} calls, Remaining (est) {remaining} calls"
 
 def get_weather(city_id):
     if not WEATHER_HOST or not WEATHER_KEY:
@@ -53,13 +86,19 @@ def send_weather_email():
         print("❌ Email config incomplete")
         return
 
-    # 拼接内容（纯英文+英文标点）
+    # 拼接内容
     total_weather = "Daily Weather Forecast (3-Day)\n"
     for cid, cname in CITIES.items():
         total_weather += format_weather(cname, get_weather(cid))
 
+    # 新增：拼接额度信息到邮件末尾
+    total_weather += "\n" + "="*30 + "\n"
+    total_weather += "Quota Status:\n"
+    total_weather += f"- {get_gh_actions_remaining()}\n"
+    total_weather += f"- {estimate_weather_api_remaining()}\n"
+    total_weather += f"Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+
     try:
-        # Base64 编码内容，彻底绕开字符编码
         content_b64 = base64.b64encode(total_weather.encode('utf-8')).decode('ascii')
         msg = MIMEText(base64.b64decode(content_b64), 'plain', 'utf-8')
         msg['From'] = SMTP_USER
