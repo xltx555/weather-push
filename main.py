@@ -15,9 +15,8 @@ os.environ['PYTHONIOENCODING'] = 'utf-8'
 os.environ['LC_ALL'] = 'en_US.UTF-8'
 os.environ['LANG'] = 'en_US.UTF-8'
 
-# 【核心修复】强制过滤环境变量中的全角字符
+# 核心修复：过滤环境变量全角字符
 def clean_env_var(var_str):
-    # 全角转半角：逗号、空格、冒号等
     var_str = var_str.replace('，', ',').replace('　', ' ').replace('：', ':')
     return var_str.strip()
 
@@ -27,7 +26,6 @@ WEATHER_HOST = clean_env_var(str(os.getenv("WEATHER_HOST", "")))
 SMTP_USER = clean_env_var(str(os.getenv("SMTP_USER", "")))
 SMTP_PWD = clean_env_var(str(os.getenv("SMTP_PWD", "")))
 TO_EMAIL_STR = clean_env_var(str(os.getenv("TO_EMAIL", "")))
-# 用英文逗号分割，再过滤空值
 TO_EMAIL_LIST = [email.strip() for email in TO_EMAIL_STR.split(",") if email.strip()]
 GITHUB_TOKEN = clean_env_var(str(os.getenv("GITHUB_TOKEN", "")))
 
@@ -86,12 +84,10 @@ def send_weather_email():
         print("❌ Email Config Incomplete")
         return
 
-    # 拼接纯英文内容
     total_weather = "Daily Weather Forecast (3-Day)\n"
     for cid, cname in CITIES.items():
         total_weather += format_weather(cname, get_weather(cid))
     
-    # 额度信息
     total_weather += "\n" + "="*30 + "\n"
     total_weather += "Quota Status:\n"
     total_weather += f"- {get_gh_actions_remaining()}\n"
@@ -99,23 +95,26 @@ def send_weather_email():
     total_weather += f"Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
 
     try:
-        # Base64编码+字节流发送，双重保险
-        content_b64 = base64.b64encode(total_weather.encode('utf-8')).decode('ascii')
-        msg = MIMEText(base64.b64decode(content_b64), 'plain', 'utf-8')
+        # 核心修改：改用 SMTP_SSL + 465 端口，稳定性更高
+        msg = MIMEText(total_weather, 'plain', 'utf-8')
         msg['From'] = SMTP_USER
         msg['Subject'] = "Daily Weather Forecast"
 
-        with smtplib.SMTP("smtp.qq.com", 587, timeout=15) as server:
-            server.starttls()
+        # 启用调试模式（可选，排查问题用）
+        # server = smtplib.SMTP_SSL("smtp.qq.com", 465, timeout=30)
+        # server.set_debuglevel(1)
+        with smtplib.SMTP_SSL("smtp.qq.com", 465, timeout=30) as server:
             server.login(SMTP_USER, SMTP_PWD)
             success = 0
             for to_email in TO_EMAIL_LIST:
                 msg['To'] = to_email
-                server.sendmail(SMTP_USER, to_email, msg.as_bytes())
+                server.sendmail(SMTP_USER, to_email, msg.as_string().encode('utf-8'))
                 success += 1
         print(f"✅ Sent to {success} email(s)")
     except smtplib.SMTPAuthenticationError:
-        print("❌ Email Login Failed, Check SMTP_PWD")
+        print("❌ Email Login Failed: Check SMTP_PWD (Foxmail授权码，不是登录密码)")
+    except smtplib.SMTPConnectError:
+        print("❌ SMTP Connection Failed: Check network or smtp.qq.com:465 port")
     except Exception as e:
         print(f"❌ Send Failed: {str(e)}")
 
