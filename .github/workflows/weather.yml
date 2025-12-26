@@ -1,0 +1,27 @@
+name: Daily Weather Push
+on:
+  schedule:
+    - cron: "0 0 * * *"  # 北京时间8点推送
+    - cron: "0 4 * * *"  # 北京时间12点推送
+    - cron: "0 14 * * *" # 北京时间22点推送
+  workflow_dispatch: # 支持手动触发
+jobs:
+  send_weather:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install requests schedule
+      - name: Run script
+        env:
+          WEATHER_KEY: ${{ secrets.WEATHER_KEY }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PWD: ${{ secrets.SMTP_PWD }}
+          TO_EMAIL: ${{ secrets.TO_EMAIL }}
+        run: python main.py
