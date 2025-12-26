@@ -3,7 +3,7 @@ name: Daily Weather Push
 on:
   workflow_dispatch:  # 手动触发
   schedule:
-    # 定时任务：每天8点、12点、22点（UTC时间，对应北京时间+8小时，实际为16:00、20:00、次日4:00，可根据需求调整）
+    # 北京时间 8:00、12:00、22:00 触发（UTC时间-8小时）
     - cron: '0 0,4,14 * * *'
 
 jobs:
@@ -13,10 +13,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install UTF-8 locale
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y locales
+          sudo locale-gen en_US.UTF-8
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'  # 指定Python版本，避免兼容性问题
+          python-version: '3.10'
 
       - name: Install dependencies
         run: |
@@ -25,11 +31,11 @@ jobs:
 
       - name: Run script
         env:
-          # 系统编码强制配置，解决ASCII编码报错
-          LC_ALL: zh_CN.UTF-8
-          LANG: zh_CN.UTF-8
+          # 使用通用的 en_US.UTF-8 编码，避免语言包缺失问题
+          LC_ALL: en_US.UTF-8
+          LANG: en_US.UTF-8
           PYTHONIOENCODING: utf-8
-          # 从GitHub Secrets读取敏感配置
+          # 从 Secrets 读取配置
           WEATHER_KEY: ${{ secrets.WEATHER_KEY }}
           WEATHER_HOST: ${{ secrets.WEATHER_HOST }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
