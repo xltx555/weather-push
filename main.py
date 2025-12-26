@@ -5,7 +5,6 @@ import os
 import schedule
 import time
 from email.mime.text import MIMEText
-from email.header import Header
 
 # 所有配置全部从环境变量读取，无任何硬编码
 WEATHER_KEY = os.getenv("WEATHER_KEY", "")
@@ -15,21 +14,19 @@ WEATHER_HOST = os.getenv("WEATHER_HOST", "")  # API Host环境变量，必填
 TO_EMAIL_STR = os.getenv("TO_EMAIL", "")
 TO_EMAIL_LIST = [email.strip() for email in TO_EMAIL_STR.split(",") if email.strip()]
 
-# 城市配置（如需动态修改也可改成环境变量）
+# 城市配置
 CITIES = {
     "101281901": "潮州",
     "101281601": "东莞"
 }
 
 def get_weather(city_id):
-    """获取今明后三天天气数据，API Host完全来自环境变量"""
-    # 先校验API Host和KEY是否配置
+    """获取今明后三天天气数据"""
     if not WEATHER_HOST:
         return "❌ API Host未配置，请在Secrets中设置WEATHER_HOST"
     if not WEATHER_KEY:
         return "❌ API KEY未配置，请在Secrets中设置WEATHER_KEY"
     
-    # 拼接URL，完全依赖环境变量
     url = f"{WEATHER_HOST}/v7/weather/3d?location={city_id}&key={WEATHER_KEY}"
     try:
         response = requests.get(url, timeout=10)
@@ -60,7 +57,7 @@ def format_weather(city_name, weather_data):
     return weather_text
 
 def send_weather_email():
-    """发送邮件，适配Foxmail/QQ邮箱，修复编码问题"""
+    """发送邮件，彻底移除Header类，解决编码问题"""
     if not (SMTP_USER and SMTP_PWD):
         print("❌ 邮箱配置不完整，请检查SMTP_USER和SMTP_PWD")
         return
@@ -74,19 +71,21 @@ def send_weather_email():
         total_weather += format_weather(city_name, weather_data)
 
     try:
+        # 直接构造纯UTF-8邮件内容，不使用Header类
         msg = MIMEText(total_weather, "plain", "utf-8")
-        msg["From"] = Header(f"天气预报<{SMTP_USER}>", "utf-8")
-        msg["Subject"] = Header("每日天气预报（今明后三天）", "utf-8")
-
-        # Foxmail SMTP配置，修复发送时的编码问题
+        msg["From"] = f"天气预报<{SMTP_USER}>"  # 纯字符串，无编码封装
+        msg["Subject"] = "每日天气预报（今明后三天）"  # 纯字符串主题
+        # 发送邮件时逐个设置接收人，避免编码冲突
         with smtplib.SMTP("smtp.qq.com", 587, timeout=10) as server:
             server.starttls()
             server.login(SMTP_USER, SMTP_PWD)
+            success_count = 0
             for to_email in TO_EMAIL_LIST:
-                msg["To"] = Header(to_email, "utf-8")
-                # 转换为utf-8字节流发送，解决ASCII编码报错
+                msg["To"] = to_email  # 直接赋值接收人邮箱
+                # 发送UTF-8编码的字节流
                 server.sendmail(SMTP_USER, to_email, msg.as_string().encode('utf-8'))
-        print(f"✅ 已成功向{len(TO_EMAIL_LIST)}个邮箱推送天气预报")
+                success_count += 1
+        print(f"✅ 已成功向{success_count}个邮箱推送天气预报")
     except smtplib.SMTPAuthenticationError:
         print("❌ 邮箱登录失败，请检查账号或授权码")
     except smtplib.SMTPException as e:
@@ -107,5 +106,4 @@ def main():
 if __name__ == "__main__":
     print("🔍 首次运行，手动触发推送...")
     send_weather_email()
-    # 注释掉main()，GitHub Actions用yml定时触发，无需本地循环
-    # main()
+    # main()  # GitHub Actions定时触发，注释掉本地循环
