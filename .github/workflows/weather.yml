@@ -1,26 +1,37 @@
 name: Daily Weather Push
+
 on:
+  workflow_dispatch:  # 手动触发
   schedule:
-    - cron: "0 0 * * *"  # 北京时间8点推送
-    - cron: "0 4 * * *"  # 北京时间12点推送
-    - cron: "0 14 * * *" # 北京时间22点推送
-  workflow_dispatch: # 支持手动触发
+    # 定时任务：每天8点、12点、22点（UTC时间，对应北京时间+8小时，实际为16:00、20:00、次日4:00，可根据需求调整）
+    - cron: '0 0,4,14 * * *'
+
 jobs:
   send_weather:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.10'  # 指定Python版本，避免兼容性问题
+
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install requests schedule
+
       - name: Run script
         env:
+          # 系统编码强制配置，解决ASCII编码报错
+          LC_ALL: zh_CN.UTF-8
+          LANG: zh_CN.UTF-8
+          PYTHONIOENCODING: utf-8
+          # 从GitHub Secrets读取敏感配置
           WEATHER_KEY: ${{ secrets.WEATHER_KEY }}
+          WEATHER_HOST: ${{ secrets.WEATHER_HOST }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PWD: ${{ secrets.SMTP_PWD }}
           TO_EMAIL: ${{ secrets.TO_EMAIL }}
