@@ -9,22 +9,29 @@ import time
 from email.mime.text import MIMEText
 from datetime import datetime
 
-# 强制编码，杜绝ASCII fallback
+# 强制系统编码为UTF-8
 sys.stdout.reconfigure(encoding='utf-8') if hasattr(sys.stdout, 'reconfigure') else None
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 os.environ['LC_ALL'] = 'en_US.UTF-8'
 os.environ['LANG'] = 'en_US.UTF-8'
 
-# 环境变量配置
-WEATHER_KEY = str(os.getenv("WEATHER_KEY", "")).strip()
-WEATHER_HOST = str(os.getenv("WEATHER_HOST", "")).strip()
-SMTP_USER = str(os.getenv("SMTP_USER", "")).strip()
-SMTP_PWD = str(os.getenv("SMTP_PWD", "")).strip()
-TO_EMAIL_STR = str(os.getenv("TO_EMAIL", "")).strip()
-TO_EMAIL_LIST = [x.strip() for x in TO_EMAIL_STR.split(",") if x.strip()]
-GITHUB_TOKEN = str(os.getenv("GITHUB_TOKEN", "")).strip()
+# 【核心修复】强制过滤环境变量中的全角字符
+def clean_env_var(var_str):
+    # 全角转半角：逗号、空格、冒号等
+    var_str = var_str.replace('，', ',').replace('　', ' ').replace('：', ':')
+    return var_str.strip()
 
-# 【关键】完全用英文，移除所有中文
+# 读取并净化环境变量
+WEATHER_KEY = clean_env_var(str(os.getenv("WEATHER_KEY", "")))
+WEATHER_HOST = clean_env_var(str(os.getenv("WEATHER_HOST", "")))
+SMTP_USER = clean_env_var(str(os.getenv("SMTP_USER", "")))
+SMTP_PWD = clean_env_var(str(os.getenv("SMTP_PWD", "")))
+TO_EMAIL_STR = clean_env_var(str(os.getenv("TO_EMAIL", "")))
+# 用英文逗号分割，再过滤空值
+TO_EMAIL_LIST = [email.strip() for email in TO_EMAIL_STR.split(",") if email.strip()]
+GITHUB_TOKEN = clean_env_var(str(os.getenv("GITHUB_TOKEN", "")))
+
+# 纯英文城市配置
 CITIES = {
     "101281901": "Chaozhou",
     "101281601": "Dongguan"
@@ -50,7 +57,7 @@ def get_gh_actions_remaining():
 def estimate_weather_api_remaining():
     daily_calls = len(CITIES) * 3
     monthly_calls = daily_calls * 30
-    api_limit = 10000  # Modify to your actual API limit
+    api_limit = 10000
     remaining = max(0, api_limit - monthly_calls)
     return f"Weather API Remaining (est): {remaining} calls"
 
@@ -70,7 +77,6 @@ def format_weather(city_name, weather_data):
     if isinstance(weather_data, str):
         return f"{city_name}: {weather_data}\n"
     text = f"\n[{city_name} 3-Day Weather]\n"
-    # 【关键】只用英文标点，无全角字符
     for day in weather_data:
         text += f"{day['fxDate']}: {day['textDay']}, Temp {day['tempMin']}℃-{day['tempMax']}℃, Wind {day['windDirDay']} {day['windScaleDay']} Level\n"
     return text
@@ -80,12 +86,12 @@ def send_weather_email():
         print("❌ Email Config Incomplete")
         return
 
-    # 拼接内容，全英文+英文标点
+    # 拼接纯英文内容
     total_weather = "Daily Weather Forecast (3-Day)\n"
     for cid, cname in CITIES.items():
         total_weather += format_weather(cname, get_weather(cid))
     
-    # 额度信息，全英文
+    # 额度信息
     total_weather += "\n" + "="*30 + "\n"
     total_weather += "Quota Status:\n"
     total_weather += f"- {get_gh_actions_remaining()}\n"
@@ -93,12 +99,9 @@ def send_weather_email():
     total_weather += f"Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
 
     try:
-        # Base64 编码，彻底绕开字符编码
-        content_bytes = total_weather.encode('utf-8')
-        content_b64 = base64.b64encode(content_bytes).decode('ascii')
-        msg_content = base64.b64decode(content_b64).decode('utf-8')
-        
-        msg = MIMEText(msg_content, 'plain', 'utf-8')
+        # Base64编码+字节流发送，双重保险
+        content_b64 = base64.b64encode(total_weather.encode('utf-8')).decode('ascii')
+        msg = MIMEText(base64.b64decode(content_b64), 'plain', 'utf-8')
         msg['From'] = SMTP_USER
         msg['Subject'] = "Daily Weather Forecast"
 
