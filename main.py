@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import requests
 import smtplib
 import os
@@ -59,7 +60,7 @@ def format_weather(city_name, weather_data):
     return weather_text
 
 def send_weather_email():
-    """发送邮件，适配Foxmail/QQ邮箱"""
+    """发送邮件，适配Foxmail/QQ邮箱，修复编码问题"""
     if not (SMTP_USER and SMTP_PWD):
         print("❌ 邮箱配置不完整，请检查SMTP_USER和SMTP_PWD")
         return
@@ -77,13 +78,14 @@ def send_weather_email():
         msg["From"] = Header(f"天气预报<{SMTP_USER}>", "utf-8")
         msg["Subject"] = Header("每日天气预报（今明后三天）", "utf-8")
 
-        # Foxmail SMTP配置
+        # Foxmail SMTP配置，修复发送时的编码问题
         with smtplib.SMTP("smtp.qq.com", 587, timeout=10) as server:
             server.starttls()
             server.login(SMTP_USER, SMTP_PWD)
             for to_email in TO_EMAIL_LIST:
                 msg["To"] = Header(to_email, "utf-8")
-                server.sendmail(SMTP_USER, to_email, msg.as_string())
+                # 转换为utf-8字节流发送，解决ASCII编码报错
+                server.sendmail(SMTP_USER, to_email, msg.as_string().encode('utf-8'))
         print(f"✅ 已成功向{len(TO_EMAIL_LIST)}个邮箱推送天气预报")
     except smtplib.SMTPAuthenticationError:
         print("❌ 邮箱登录失败，请检查账号或授权码")
